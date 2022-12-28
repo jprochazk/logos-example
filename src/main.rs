@@ -1,57 +1,26 @@
+mod part;
+
 use std::collections::HashSet;
 
-use logos::skip;
-use logos::Lexer;
-use logos::Logos;
-
-struct Extras<'a> {
-    emotes: HashSet<&'a str>,
-}
-
-#[derive(Logos, Debug)]
-#[logos(extras = Extras<'s>)]
-enum Part {
-    #[regex(r"\w+", emote)]
-    Emote,
-
-    #[regex(r"https?", url)]
-    Url,
-
-    #[regex(r"\s+", skip)]
-    Whitespace,
-
-    #[error]
-    Text,
-}
-
-fn emote(l: &mut Lexer<'_, Part>) -> Option<()> {
-    if l.extras.emotes.contains(l.slice()) {
-        Some(())
-    } else {
-        None
-    }
-}
-
-fn url(l: &mut Lexer<'_, Part>) -> Option<()> {
-    let i = l
-        .remainder()
-        .find(|c: char| c.is_ascii_whitespace())
-        .unwrap_or(l.remainder().len());
-    l.bump(i);
-    url::Url::parse(l.slice()).ok().map(|_| ())
-}
+use part::*;
 
 fn main() {
-    let input = "test asdf abcd ok http://test.com/a?b=c";
+    let input = "https://github.com/jprochazk/logos-example/blob/master/src/main.rs not sure";
     let extras = Extras {
-        emotes: HashSet::from_iter(["test", "ok"]),
+        emotes: HashSet::from_iter(
+            [
+                "test", "ok", ":)", ":(", ":D", ">(", ":|", "O_o", "B)", ":O", "<3", ":/", ";)",
+                ":P", ";P", "R)",
+            ]
+            .map(String::from),
+        ),
+        names: HashSet::from_iter(["moscowwbish", "mrhalzy"].map(String::from)),
     };
 
-    let mut lexer = Part::lexer_with_extras(input, extras);
-    let mut parts = vec![];
-    while let Some(token) = lexer.next() {
-        parts.push((token, lexer.span(), lexer.slice()))
-    }
+    let parts = Parser::new(input, extras).collect::<Vec<_>>();
 
     println!("{parts:?}");
 }
+
+#[cfg(test)]
+mod tests;
