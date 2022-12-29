@@ -105,6 +105,7 @@ impl<'src> Iterator for Urls<'src> {
 }
 
 pub struct Parser<'src> {
+    src: &'src str,
     inner: Peekable<Urls<'src>>,
 }
 
@@ -115,7 +116,7 @@ impl<'src> Parser<'src> {
         let inner = Emotes { inner };
         let inner = Urls { inner };
         let inner = inner.peekable();
-        Self { inner }
+        Self { src, inner }
     }
 }
 
@@ -134,9 +135,8 @@ fn try_combine_text<'src>(p: &mut Parser<'src>, next: &mut Part<'src>) {
             ..
         })
     ) {
-        // combine spans and strings
+        // extend the current parts's span to also contain all the subsequent text parts
         let mut span = next.span.clone();
-        let mut str = next.str.to_string();
         while matches!(
             p.inner.peek(),
             Some(Part {
@@ -146,10 +146,10 @@ fn try_combine_text<'src>(p: &mut Parser<'src>, next: &mut Part<'src>) {
         ) {
             let temp = p.inner.next().unwrap();
             span.end = temp.span.end;
-            str += &temp.str;
         }
-        next.span = span;
-        next.str = str.into();
+        // use that extended span to slice the original source
+        next.span = span.clone();
+        next.str = p.src[span].into();
     }
 }
 
