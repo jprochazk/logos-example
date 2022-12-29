@@ -15,15 +15,15 @@ pub struct Extras {
 #[derive(Logos, PartialEq, Eq, Debug)]
 #[logos(extras = Extras)]
 pub enum PartKind {
-    #[regex(r"https?", url)]
+    // Emotes and URLs are processed later
     Url,
-    #[regex(r"([^\s][^\s][^\s]?)|[\w\d]+", emote)]
     Emote,
     #[regex(r"```[^`]+```")]
     #[regex(r"`[^`]+`")]
     Code,
     #[regex(r"@\w+", mention)]
     Mention,
+    #[regex(r"[!-~]+")]
     #[error]
     Text,
 }
@@ -33,25 +33,6 @@ pub struct Part<'src> {
     pub str: Cow<'src, str>,
     pub span: Span,
     pub kind: PartKind,
-}
-
-fn emote(l: &mut Lexer<'_, PartKind>) -> Option<()> {
-    eprintln!("emote");
-    if l.extras.emotes.contains(l.slice()) {
-        Some(())
-    } else {
-        None
-    }
-}
-
-fn url(l: &mut Lexer<'_, PartKind>) -> Option<()> {
-    eprintln!("url");
-    let i = l
-        .remainder()
-        .find(|c: char| c.is_ascii_whitespace())
-        .unwrap_or(l.remainder().len());
-    l.bump(i);
-    url::Url::parse(l.slice()).ok().map(|_| ())
 }
 
 fn mention(l: &mut Lexer<'_, PartKind>) -> Option<()> {
@@ -81,18 +62,60 @@ impl<'src> Iterator for Parts<'src> {
     }
 }
 
+struct Emotes<'src> {
+    inner: Parts<'src>,
+}
+
+impl<'src> Iterator for Emotes<'src> {
+    type Item = Part<'src>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|part| {
+            if self.inner.inner.extras.emotes.contains(part.str.as_ref()) {
+                Part {
+                    kind: PartKind::Emote,
+                    ..part
+                }
+            } else {
+                part
+            }
+        })
+    }
+}
+
+struct Urls<'src> {
+    inner: Emotes<'src>,
+}
+
+impl<'src> Iterator for Urls<'src> {
+    type Item = Part<'src>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|part| {
+            if part.kind == PartKind::Text && url::Url::parse(&part.str).is_ok() {
+                Part {
+                    kind: PartKind::Url,
+                    ..part
+                }
+            } else {
+                part
+            }
+        })
+    }
+}
+
 pub struct Parser<'src> {
-    inner: Peekable<Parts<'src>>,
+    inner: Peekable<Urls<'src>>,
 }
 
 impl<'src> Parser<'src> {
     pub fn new(src: &'src str, extras: Extras) -> Self {
-        Self {
-            inner: Parts {
-                inner: Lexer::with_extras(src, extras),
-            }
-            .peekable(),
-        }
+        let inner = Lexer::with_extras(src, extras);
+        let inner = Parts { inner };
+        let inner = Emotes { inner };
+        let inner = Urls { inner };
+        let inner = inner.peekable();
+        Self { inner }
     }
 }
 
